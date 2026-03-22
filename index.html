@@ -309,11 +309,7 @@
 
       <div class="card">
         <label for="inputText">入力テキスト</label>
-        <textarea id="inputText" spellcheck="false">watashi wa nihongo no network visualization ga suki desu.
-kanaji no tsunagari wo mieru you ni shitai.
-obsidian mitaina graph de juuyou na musubitsuki dake iro wo kaetai.
-kana no kankei ga wakaru to benri desu.
-nihongo no deeta kara kana no renzoku wo shirabetai.</textarea>
+        <textarea id="inputText" spellcheck="false">ro-mazinonyuuryokuwotesutodekimasu.ironnasitexndebunnsekidekite,atarasiihakkenngaarukamosiremasenn.</textarea>
         <div class="row" style="margin-top: 10px;">
           <div>
             <label for="analyzeMode">解析モード</label>
@@ -1150,7 +1146,7 @@ nihongo no deeta kara kana no renzoku wo shirabetai.</textarea>
           ye:'いぇ',
           xtsu:'っ', ltsu:'っ', xtu:'っ', ltu:'っ',
           xya:'ゃ', lya:'ゃ', xyu:'ゅ', lyu:'ゅ', xyo:'ょ', lyo:'ょ',
-          xwa:'ゎ', lwa:'ゎ', xka:'ヵ', xke:'ヶ',
+          xwa:'ゎ', lwa:'ゎ', xka:'ヵ', xke:'ヶ', xn:'ん',
           a:'あ', i:'い', u:'う', e:'え', o:'お',
           ka:'か', ki:'き', ku:'く', ke:'け', ko:'こ',
           ga:'が', gi:'ぎ', gu:'ぐ', ge:'げ', go:'ご',
@@ -1167,6 +1163,25 @@ nihongo no deeta kara kana no renzoku wo shirabetai.</textarea>
           ra:'ら', ri:'り', ru:'る', re:'れ', ro:'ろ',
           wa:'わ', wi:'うぃ', we:'うぇ', wo:'を',
           n:'ん'
+        };
+
+        const symbolMap = {
+          '-':'ー',
+          '~':'〜',
+          '.':'。',
+          ',':'、',
+          'z/':'・',
+          'z.':'…',
+          'z,':'‥',
+          'zh':'←',
+          'zj':'↓',
+          'zk':'↑',
+          'zl':'→',
+          'z-':'〜',
+          'z[':'『',
+          'z]':'』',
+          '[':'「',
+          ']':'」'
         };
 
         const punctRegex = new RegExp('[\\s\\u3000.,!?;:()\\[\\]{}<>「」『』【】〈〉《》〔〕・、。！？…—―ー\\-_/\\\\|~\\'\"“”‘’]');
@@ -1281,6 +1296,22 @@ nihongo no deeta kara kana no renzoku wo shirabetai.</textarea>
             if ((steps++ & 32767) === 0) postMessage({ type: 'progress', progress: i / Math.max(1, text.length) });
             const ch = text[i];
             const code = ch.charCodeAt(0);
+
+            let matchedSymbol = false;
+            for (let len = 2; len >= 1; len--) {
+              const piece = text.slice(i, i + len);
+              const kana = symbolMap[piece];
+              if (kana) {
+                state.romanChars += len;
+                state.converted += len;
+                appendKanaOutput(state, kana);
+                i += len;
+                matchedSymbol = true;
+                break;
+              }
+            }
+            if (matchedSymbol) continue;
+
             if (!isAlphaCode(code)) {
               appendPreview(state, ch);
               if (isSeparator(ch)) breakSequence(state);
@@ -1322,10 +1353,21 @@ nihongo no deeta kara kana no renzoku wo shirabetai.</textarea>
                 continue;
               }
               if (n1 === 'n') {
-                state.romanChars += 1;
-                state.converted += 1;
-                appendKanaOutput(state, 'ん');
-                i += 1;
+                const n2StartsKana = n2 === 'a' || n2 === 'e' || n2 === 'i' || n2 === 'o' || n2 === 'u' || n2 === 'y';
+
+                if (n2StartsKana) {
+                  // 例: kanna -> かんな, nnya -> んにゃ
+                  state.romanChars += 1;
+                  state.converted += 1;
+                  appendKanaOutput(state, 'ん');
+                  i += 1; // 2個目の n は次の syllable 用に残す
+                } else {
+                  // 例: bunnseki -> ぶんせき, hakkenn -> はっけん, masenn -> ません
+                  state.romanChars += 2;
+                  state.converted += 2;
+                  appendKanaOutput(state, 'ん');
+                  i += 2; // nn をまとめて 1つの「ん」として消費
+                }
                 continue;
               }
               const n1isAlpha = n1 ? isAlphaCode(n1.charCodeAt(0)) : false;
@@ -1621,15 +1663,13 @@ nihongo no deeta kara kana no renzoku wo shirabetai.</textarea>
 
     els.sampleRomajiBtn.addEventListener('click', () => {
       els.analyzeMode.value = 'romaji';
-      els.inputText.value = `shimbun wo yomu toki ni matcha to tempura no moji mo shikkari henkanshitai.
-kin'youbi no toukyou de kampai shite, she che thi dhi fyu xtsu lya nado mo tesuto suru.
-obsidian mitaina graph de juuyou na tsunagari dake iro wo kaetai.`;
+      els.inputText.value = `ro-mazinonyuuryokuwotesutodekimasu.ironnasitexndebunnsekidekite,atarasiihakkenngaarukamosiremasenn.`;
       analyzeAndRender();
     });
 
     els.sampleJapaneseBtn.addEventListener('click', () => {
       els.analyzeMode.value = 'raw';
-      els.inputText.value = `日本語の文章をそのまま文字単位で解析します。\n漢字もひらがなもカタカナも、その一文字ごとの連接として扱います。\n視覚化資料は本当に使いやすい。`;
+      els.inputText.value = `日本語の文章をそのまま文字単位で解析します。\n漢字もひらがなもカタカナも、その一文字ごとの連接として扱います。`;
       analyzeAndRender();
     });
 
