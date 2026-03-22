@@ -472,11 +472,13 @@
       mode: 'unknown',
       requestedMode: 'auto',
       transform: { x: 0, y: 0, scale: 1 },
-      camera: { yaw: 0, pitch: 0, distance: 920 },
+      camera: { distance: 920, rotation: [0, 0, 0, 1] },
       hoveredNode: null,
       hoveredEdge: null,
       dragNode: null,
       dragLast: null,
+      dragPlaneZ: 0,
+      dragOffset: null,
       panMode: false,
       panStart: null,
       orbitMode: false,
@@ -539,6 +541,156 @@
       return Math.max(min, Math.min(max, v));
     }
 
+    function dot3(a, b) {
+      return a.x * b.x + a.y * b.y + a.z * b.z;
+    }
+
+    function cross3(a, b) {
+      return {
+        x: a.y * b.z - a.z * b.y,
+        y: a.z * b.x - a.x * b.z,
+        z: a.x * b.y - a.y * b.x
+      };
+    }
+
+    function normalizeVec3(v) {
+      const len = Math.hypot(v.x, v.y, v.z) || 1;
+      return { x: v.x / len, y: v.y / len, z: v.z / len };
+    }
+
+    function quatNormalize(q) {
+      const len = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
+      return [q[0] / len, q[1] / len, q[2] / len, q[3] / len];
+    }
+
+    function quatMultiply(a, b) {
+      return [
+        a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+        a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+        a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+        a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]
+      ];
+    }
+
+    function quatConjugate(q) {
+      return [-q[0], -q[1], -q[2], q[3]];
+    }
+
+    function quatFromAxisAngle(axis, angle) {
+      const unit = normalizeVec3({ x: axis[0], y: axis[1], z: axis[2] });
+      const half = angle * 0.5;
+      const s = Math.sin(half);
+      return [unit.x * s, unit.y * s, unit.z * s, Math.cos(half)];
+    }
+
+    function quatFromUnitVectors(from, to) {
+      const a = normalizeVec3(from);
+      const b = normalizeVec3(to);
+      const d = clamp(dot3(a, b), -1, 1);
+
+      if (d < -0.999999) {
+        let axis = cross3({ x: 1, y: 0, z: 0 }, a);
+        if (Math.hypot(axis.x, axis.y, axis.z) < 1e-6) {
+          axis = cross3({ x: 0, y: 1, z: 0 }, a);
+        }
+        return quatNormalize([axis.x, axis.y, axis.z, 0]);
+      }
+
+      const axis = cross3(a, b);
+      return quatNormalize([axis.x, axis.y, axis.z, 1 + d]);
+    }
+
+    function quatToMatrix3(q) {
+      const n = quatNormalize(q);
+      const [x, y, z, w] = n;
+
+      const xx = x * x, yy = y * y, zz = z * z;
+      const xy = x * y, xz = x * z, yz = y * z;
+      const wx = w * x, wy = w * y, wz = w * z;
+
+      return [
+        1 - 2 * (yy + zz),
+        2 * (xy - wz),
+        2 * (xz + wy),
+
+        2 * (xy + wz),
+        1 - 2 * (xx + zz),
+        2 * (yz - wx),
+
+        2 * (xz - wy),
+        2 * (yz + wx),
+        1 - 2 * (xx + yy)
+      ];
+    }
+
+    function mapPointerToArcball(clientX, clientY) {
+      const rect = els.canvas.getBoundingClientRect();
+      const size = Math.max(1, Math.min(rect.width, rect.height));
+
+      const x = ((clientX - rect.left) - rect.width * 0.5) / (size * 0.5);
+      const y = (rect.height * 0.5 - (clientY - rect.top)) / (size * 0.5);
+
+      const d = Math.hypot(x, y);
+      const z = d <= 0.7071067811865476 ? Math.sqrt(1 - d * d) : 0.5 / d;
+
+      return normalizeVec3({ x, y, z });
+    }
+
+    function screenToWorldOnFixedZ(screenX, screenY, planeZ) {
+      if (!els.enable3D.checked || Number(els.depthStrength.value) <= 0) {
+        return { x: screenX, y: screenY };
+      }
+
+      const rot = quatToMatrix3(quatConjugate(state.camera.rotation));
+      const cam = state.camera.distance;
+      const cx = VIEW_W / 2;
+      const cy = VIEW_H / 2;
+
+      const u = screenX - cx;
+      const v = screenY - cy;
+
+      const eye = { x: 0, y: 0, z: cam };
+      const dir = { x: u, y: v, z: -cam };
+
+      // world z-axis transformed into camera space
+      const normal = { x: rot[2], y: rot[5], z: rot[8] };
+      const planePoint = {
+        x: normal.x * planeZ,
+        y: normal.y * planeZ,
+        z: normal.z * planeZ
+      };
+
+      const denom = dot3(normal, dir);
+      if (Math.abs(denom) < 1e-6) {
+        return { x: screenX, y: screenY };
+      }
+
+      const t = dot3(normal, {
+        x: planePoint.x - eye.x,
+        y: planePoint.y - eye.y,
+        z: planePoint.z - eye.z
+      }) / denom;
+
+      if (!Number.isFinite(t)) {
+        return { x: screenX, y: screenY };
+      }
+
+      const camPoint = {
+        x: eye.x + dir.x * t,
+        y: eye.y + dir.y * t,
+        z: eye.z + dir.z * t
+      };
+
+      // inverse rotation = transpose(rot)
+      const worldX = rot[0] * camPoint.x + rot[3] * camPoint.y + rot[6] * camPoint.z;
+      const worldY = rot[1] * camPoint.x + rot[4] * camPoint.y + rot[7] * camPoint.z;
+
+      return {
+        x: cx + worldX,
+        y: cy + worldY
+      };
+    }
+
     function scaleBy(value, minVal, maxVal, outMin, outMax) {
       if (maxVal <= minVal) return (outMin + outMax) / 2;
       const t = (value - minVal) / (maxVal - minVal);
@@ -574,7 +726,8 @@
           const dtMs = state.lastVisualTime ? Math.min(40, Math.max(8, ts - state.lastVisualTime)) : 16.6667;
           state.lastVisualTime = ts;
           const yawPerSecond = 0.14;
-          state.camera.yaw += yawPerSecond * (dtMs / 1000);
+          const qStep = quatFromAxisAngle([0, 1, 0], yawPerSecond * (dtMs / 1000));
+          state.camera.rotation = quatNormalize(quatMultiply(qStep, state.camera.rotation));
           state.renderCache = null;
           drawGraph();
         } else {
@@ -776,8 +929,7 @@
         }
       }
       state.transform = { x: 0, y: 0, scale: 1 };
-      state.camera.yaw = 0;
-      state.camera.pitch = 0;
+      state.camera.rotation = [0, 0, 0, 1];
       state.renderCache = null;
     }
 
@@ -931,12 +1083,11 @@
     function computeRenderCache() {
       if (state.renderCache) return state.renderCache;
       const enable3D = !!els.enable3D.checked;
-      const yaw = enable3D ? state.camera.yaw : 0;
-      const pitch = enable3D ? state.camera.pitch : 0;
       const cam = state.camera.distance;
       const cx = VIEW_W / 2;
       const cy = VIEW_H / 2;
       const nodes = [];
+      const rot = enable3D ? quatToMatrix3(quatConjugate(state.camera.rotation)) : null;
 
       for (const node of state.nodes) {
         let x = node.x;
@@ -950,19 +1101,19 @@
 
         const dx = x - cx;
         const dy = y - cy;
-        const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
-        const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
-        const x1 = dx * cosY - z * sinY;
-        const z1 = dx * sinY + z * cosY;
-        const y2 = dy * cosP - z1 * sinP;
-        const z2 = dy * sinP + z1 * cosP;
+
+        const x1 = dx * rot[0] + dy * rot[1] + z * rot[2];
+        const y1 = dx * rot[3] + dy * rot[4] + z * rot[5];
+        const z2 = dx * rot[6] + dy * rot[7] + z * rot[8];
+
         const denom = Math.max(220, cam - z2);
         const persp = cam / denom;
         const radius = getNodeRadius(node) * clamp(0.80 + (persp - 1) * 0.55, 0.72, 1.45);
+
         nodes.push({
           node,
           x: cx + x1 * persp,
-          y: cy + y2 * persp,
+          y: cy + y1 * persp,
           z: z2,
           persp,
           radius
@@ -1547,7 +1698,14 @@
       const node = findNodeAt(p.x, p.y);
       if (node) {
         state.dragNode = node;
-        state.dragLast = p;
+        state.dragPlaneZ = node.baseZ || 0;
+
+        const anchor = screenToWorldOnFixedZ(p.x, p.y, state.dragPlaneZ);
+        state.dragOffset = {
+          x: node.x - anchor.x,
+          y: node.y - anchor.y
+        };
+
         node.fixed = true;
         node.fx = node.x;
         node.fy = node.y;
@@ -1558,7 +1716,7 @@
       }
       if (e.shiftKey && els.enable3D.checked) {
         state.orbitMode = true;
-        state.orbitStart = { x: e.clientX, y: e.clientY, yaw: state.camera.yaw, pitch: state.camera.pitch };
+        state.orbitStart = { vec: mapPointerToArcball(e.clientX, e.clientY) };
         els.canvas.classList.add('dragging');
         return;
       }
@@ -1570,22 +1728,27 @@
     els.canvas.addEventListener('pointermove', (e) => {
       const p = clientToWorld(e.clientX, e.clientY);
       if (state.dragNode) {
-        const cache = computeRenderCache();
-        const item = cache.nodeById.get(state.dragNode.id);
-        const dx = p.x - (state.dragLast?.x ?? p.x);
-        const dy = p.y - (state.dragLast?.y ?? p.y);
-        const inv = item ? 1 / Math.max(0.78, item.persp) : 1;
-        state.dragNode.fx = clamp((state.dragNode.fx ?? state.dragNode.x) + dx * inv, 40, VIEW_W - 40);
-        state.dragNode.fy = clamp((state.dragNode.fy ?? state.dragNode.y) + dy * inv, 40, VIEW_H - 40);
-        state.dragNode.x = state.dragNode.fx;
-        state.dragNode.y = state.dragNode.fy;
-        state.dragLast = p;
+        const anchor = screenToWorldOnFixedZ(p.x, p.y, state.dragPlaneZ);
+        const offset = state.dragOffset || { x: 0, y: 0 };
+
+        const nextX = clamp(anchor.x + offset.x, 40, VIEW_W - 40);
+        const nextY = clamp(anchor.y + offset.y, 40, VIEW_H - 40);
+
+        state.dragNode.fx = nextX;
+        state.dragNode.fy = nextY;
+        state.dragNode.x = nextX;
+        state.dragNode.y = nextY;
+
         requestDraw();
         return;
       }
       if (state.orbitMode && state.orbitStart) {
-        state.camera.yaw = state.orbitStart.yaw - (e.clientX - state.orbitStart.x) * 0.008;
-        state.camera.pitch = clamp(state.orbitStart.pitch + (e.clientY - state.orbitStart.y) * 0.006, -0.95, 0.95);
+        const nextVec = mapPointerToArcball(e.clientX, e.clientY);
+        const deltaQ = quatFromUnitVectors(state.orbitStart.vec, nextVec);
+
+        state.camera.rotation = quatNormalize(quatMultiply(deltaQ, state.camera.rotation));
+        state.orbitStart.vec = nextVec;
+
         requestDraw();
         return;
       }
@@ -1616,6 +1779,8 @@
     function releasePointer() {
       state.dragNode = null;
       state.dragLast = null;
+      state.dragPlaneZ = 0;
+      state.dragOffset = null;
       state.panMode = false;
       state.panStart = null;
       state.orbitMode = false;
