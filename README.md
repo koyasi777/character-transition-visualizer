@@ -56,9 +56,6 @@ Character Transition Visualizer は、テキスト中の文字どうしの連接
 * **例 (かなかな)**: 「か→な」「な→か」「か→な」として集計されます。
 * **注意**: 対象文字が 2 文字未満の場合、リンクは構築されません。文字単位モードでは、非空白かつ非句読点の文字が対象となります。
 
-### ライセンス
-MIT License などの公開方針に応じたライセンスを選択してください。
-
 ---
 
 ## 🇬🇧 English
@@ -114,6 +111,3 @@ Character Transition Visualizer is a browser-based single-file HTML application 
 The tool builds a graph from adjacent character pairs in the processed sequence. Punctuation and whitespace break the sequence.
 * **Example (k a n a k a n a)**: Converted to "かなかな", the graph includes transitions like "か -> な", "な -> か", and "か -> な".
 * **Notes**: If fewer than two target characters are available, no links are produced. In Raw mode, non-whitespace and non-punctuation characters are analyzed directly.
-
-### License
-Choose the license that fits your release goals. MIT License is usually the simplest option for public release.
