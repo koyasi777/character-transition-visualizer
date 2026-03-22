@@ -1,6 +1,6 @@
 # Character Transition Visualizer
 
-<img width="3454" height="2019" alt="image" src="https://koyasi777.github.io/character-transition-visualizer/assets/ogp/character-network.png" />
+<img width="2454" alt="image" src="https://koyasi777.github.io/character-transition-visualizer/assets/ogp/character-network.png" />
 
 ---
 
