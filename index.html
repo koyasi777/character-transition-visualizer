@@ -106,6 +106,62 @@
       margin-bottom: 6px;
     }
 
+    .label-with-help {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .label-main {
+      color: var(--muted);
+    }
+
+    .help-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.05);
+      color: #d6e0f7;
+      font-size: 0.72rem;
+      font-weight: 700;
+      line-height: 1;
+      cursor: help;
+      flex: 0 0 auto;
+    }
+
+    .help-tooltip {
+      position: fixed;
+      left: 0;
+      top: 0;
+      transform: translate(-9999px, -9999px);
+      width: min(320px, calc(100vw - 24px));
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(9, 13, 24, 0.96);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--text);
+      font-size: 0.82rem;
+      line-height: 1.5;
+      white-space: normal;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 9999;
+      transition: opacity 0.12s ease;
+    }
+
+    .control-help-note {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+
     textarea {
       width: 100%;
       min-height: 230px;
@@ -356,25 +412,38 @@
 
       <div class="card controls">
         <div>
-          <label for="minWeight">表示する最小リンク重み: <span id="minWeightValue">2</span></label>
+          <label for="minWeight" class="label-with-help">
+            <span class="label-main">表示する最小リンク重み: <span id="minWeightValue">2</span></span>
+            <span class="help-chip" tabindex="0" data-tip="リンク重みは、2文字のつながりが何回出たかです。2なら、2回以上出たリンクだけを表示します。値を上げるほど、よく出たつながりだけが残ります。">?</span>
+          </label>
           <input id="minWeight" type="range" min="1" max="30" step="1" value="2" />
         </div>
 
         <div>
-          <label for="highlightRatio">重要リンクとして強調する上位割合: <span id="highlightRatioValue">15</span>%</label>
+          <label for="highlightRatio" class="label-with-help">
+            <span class="label-main">重要リンクとして強調する上位割合: <span id="highlightRatioValue">15</span>%</span>
+            <span class="help-chip" tabindex="0" data-tip="重要リンクは、いま表示されているリンクの中で重みが大きい上位のリンクです。15%なら上位15%を強調表示します。値を上げると、強調されるリンクが増えます。">?</span>
+          </label>
           <input id="highlightRatio" type="range" min="1" max="50" step="1" value="15" />
         </div>
 
         <div>
-          <label for="repelStrength">ノード反発の強さ: <span id="repelStrengthValue">1800</span></label>
+          <label for="repelStrength" class="label-with-help">
+            <span class="label-main">ノード反発の強さ: <span id="repelStrengthValue">1800</span></span>
+            <span class="help-chip" tabindex="0" data-tip="ノード同士が離れようとする強さです。値を上げると全体が広がり、下げると密集しやすくなります。見やすい配置に調整するための値です。">?</span>
+          </label>
           <input id="repelStrength" type="range" min="400" max="4200" step="100" value="1800" />
         </div>
 
         <div>
-          <label for="depthStrength">3D 奥行き: <span id="depthStrengthValue">140</span></label>
+          <label for="depthStrength" class="label-with-help">
+            <span class="label-main">3D 奥行き: <span id="depthStrengthValue">140</span></span>
+            <span class="help-chip" tabindex="0" data-tip="前後方向の深さです。0に近いほど平面表示になり、値を上げるほど立体感が強くなります。">?</span>
+          </label>
           <input id="depthStrength" type="range" min="0" max="260" step="10" value="140" />
         </div>
 
+        <div class="control-help-note">用語メモ: リンク重み = 2文字のつながり回数 / 重要リンク = いま表示中の上位リンク</div>
         <div class="grid-2">
           <label class="checkbox"><input id="onlyImportant" type="checkbox" />重要リンクのみ表示</label>
           <label class="checkbox"><input id="showLabels" type="checkbox" checked />ラベル表示</label>
@@ -455,6 +524,7 @@
       <div id="tooltip" class="tooltip"></div>
     </main>
   </div>
+  <div id="helpTooltip" class="help-tooltip" aria-hidden="true"></div>
 
   <script>
     const VIEW_W = 1200;
@@ -528,7 +598,8 @@
       topEdgesBody: document.getElementById('topEdgesBody'),
       graphInfo: document.getElementById('graphInfo'),
       canvas: document.getElementById('graphCanvas'),
-      tooltip: document.getElementById('tooltip')
+      tooltip: document.getElementById('tooltip'),
+      helpTooltip: document.getElementById('helpTooltip')
     };
 
     const ctx = els.canvas.getContext('2d');
@@ -1256,6 +1327,36 @@
       els.tooltip.style.transform = 'translate(-9999px, -9999px)';
     }
 
+    function showHelpTooltip(text, clientX, clientY) {
+      const tip = els.helpTooltip;
+      tip.textContent = text;
+      tip.style.opacity = '1';
+      tip.style.transform = 'translate(-9999px, -9999px)';
+
+      const margin = 12;
+      const rect = tip.getBoundingClientRect();
+
+      let x = clientX + 14;
+      let y = clientY + 14;
+
+      if (x + rect.width > window.innerWidth - margin) {
+        x = window.innerWidth - rect.width - margin;
+      }
+      if (y + rect.height > window.innerHeight - margin) {
+        y = clientY - rect.height - 14;
+      }
+
+      x = Math.max(margin, x);
+      y = Math.max(margin, y);
+
+      tip.style.transform = `translate(${x}px, ${y}px)`;
+    }
+
+    function hideHelpTooltip() {
+      els.helpTooltip.style.opacity = '0';
+      els.helpTooltip.style.transform = 'translate(-9999px, -9999px)';
+    }
+
     function generateSvgString() {
       const cache = computeRenderCache();
       const visibleEdges = state.visibleEdges;
@@ -1894,7 +1995,30 @@
       }
     });
 
-    window.addEventListener('resize', requestDraw);
+    document.querySelectorAll('.help-chip').forEach((el) => {
+      el.addEventListener('pointerenter', (e) => {
+        showHelpTooltip(el.dataset.tip || '', e.clientX, e.clientY);
+      });
+
+      el.addEventListener('pointermove', (e) => {
+        showHelpTooltip(el.dataset.tip || '', e.clientX, e.clientY);
+      });
+
+      el.addEventListener('pointerleave', hideHelpTooltip);
+      el.addEventListener('blur', hideHelpTooltip);
+
+      el.addEventListener('focus', () => {
+        const rect = el.getBoundingClientRect();
+        showHelpTooltip(el.dataset.tip || '', rect.right, rect.bottom);
+      });
+    });
+
+    window.addEventListener('scroll', hideHelpTooltip, true);
+    window.addEventListener('resize', () => {
+      hideHelpTooltip();
+      requestDraw();
+    });
+
     requestDraw();
     analyzeAndRender();
   </script>
