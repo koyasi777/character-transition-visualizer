@@ -1,0 +1,1674 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>文字ネットワーク可視化</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #141b2f;
+      --panel-2: #0f1628;
+      --text: #e7edf8;
+      --muted: #97a3bc;
+      --accent: #6ea8ff;
+      --danger: #ff9d77;
+      --warn: #ffd36e;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, "Noto Sans JP", system-ui, sans-serif;
+      background: radial-gradient(circle at top, #15203d 0%, var(--bg) 38%, #080d18 100%);
+      color: var(--text);
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      min-height: 100vh;
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .panel, .viewer {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .panel {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow: auto;
+      max-height: calc(100vh - 32px);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      letter-spacing: 0.02em;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 230px;
+      resize: vertical;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: #0b1120;
+      color: var(--text);
+      padding: 12px;
+      line-height: 1.55;
+      font-size: 0.95rem;
+    }
+
+    input[type="range"], input[type="file"], button {
+      width: 100%;
+    }
+
+    input[type="range"] { accent-color: var(--accent); }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 11px 14px;
+      background: #243459;
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 700;
+      transition: transform 0.08s ease, opacity 0.15s ease, background 0.2s ease;
+    }
+    button:hover { opacity: 0.95; }
+    button:active { transform: translateY(1px); }
+    button.secondary { background: #1c2743; }
+    button.ghost { background: transparent; border: 1px solid rgba(255,255,255,0.14); }
+    button.warn { background: #4d3311; color: #ffe4a6; }
+
+    .controls { display: grid; gap: 10px; }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .row > * { flex: 1; }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .kpi {
+      background: var(--panel-2);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .kpi .value {
+      font-size: 1.2rem;
+      font-weight: 800;
+      margin-top: 4px;
+    }
+
+    .viewer {
+      position: relative;
+      overflow: hidden;
+      min-height: calc(100vh - 32px);
+    }
+
+    .toolbar {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .toolbar > div {
+      pointer-events: auto;
+      background: rgba(10, 15, 28, 0.82);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 12px;
+      padding: 8px 12px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      backdrop-filter: blur(8px);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background:
+        radial-gradient(circle at center, rgba(82, 125, 202, 0.08), transparent 36%),
+        linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      touch-action: none;
+      cursor: grab;
+    }
+
+    canvas.dragging { cursor: grabbing; }
+
+    .legend {
+      display: grid;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    .preview {
+      background: #09101f;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.06);
+      padding: 12px;
+      color: #d6e0f7;
+      max-height: 150px;
+      overflow: auto;
+      line-height: 1.6;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      padding: 8px 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      text-align: left;
+    }
+
+    th { color: var(--muted); font-weight: 600; }
+
+    .muted { color: var(--muted); }
+    .small { font-size: 0.82rem; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--muted);
+      font-size: 0.8rem;
+      white-space: nowrap;
+    }
+
+    .checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-size: 0.92rem;
+    }
+
+    .checkbox input { width: auto; }
+
+    .footer-note {
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 0.85rem;
+    }
+
+    .status {
+      color: #cfe2ff;
+      min-height: 1.2em;
+      font-size: 0.88rem;
+      white-space: pre-wrap;
+    }
+
+    .tooltip {
+      position: absolute;
+      z-index: 5;
+      pointer-events: none;
+      background: rgba(9, 13, 24, 0.96);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 0.87rem;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translate(-9999px, -9999px);
+      transition: opacity 0.1s ease;
+      max-width: 280px;
+    }
+
+    @media (max-width: 1100px) {
+      .app { grid-template-columns: 1fr; }
+      .panel, .viewer { min-height: auto; max-height: none; }
+      .viewer { height: 74vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <div>
+        <h1>文字ネットワーク可視化</h1>
+        <div class="sub">
+          解析モードを `自動 / ローマ字→ひらがな / 文字単位` から選べます。英語や日本語をそのまま 1 文字ずつ解析したい場合は文字単位モードを使ってください。3D 表示は静止を基本にし、必要なときだけ回転できます。
+        </div>
+      </div>
+
+      <div class="card">
+        <label for="inputText">入力テキスト</label>
+        <textarea id="inputText" spellcheck="false">watashi wa nihongo no network visualization ga suki desu.
+kanaji no tsunagari wo mieru you ni shitai.
+obsidian mitaina graph de juuyou na musubitsuki dake iro wo kaetai.
+kana no kankei ga wakaru to benri desu.
+nihongo no deeta kara kana no renzoku wo shirabetai.</textarea>
+        <div class="row" style="margin-top: 10px;">
+          <div>
+            <label for="analyzeMode">解析モード</label>
+            <select id="analyzeMode" style="width:100%; border-radius:12px; border:1px solid rgba(255,255,255,0.1); background:#0b1120; color:var(--text); padding:11px 12px;">
+              <option value="auto" selected>自動判定</option>
+              <option value="romaji">ローマ字→ひらがな</option>
+              <option value="raw">文字単位</option>
+            </select>
+          </div>
+        </div>
+        <div class="row" style="margin-top: 10px;">
+          <button id="sampleRomajiBtn" class="secondary">ローマ字サンプル</button>
+          <button id="sampleJapaneseBtn" class="secondary">日本語サンプル</button>
+          <button id="analyzeBtn">解析して描画</button>
+        </div>
+        <div class="row" style="margin-top: 10px;">
+          <input id="fileInput" type="file" accept=".txt,.csv,.tsv,.md,.log,.json,text/plain" />
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+
+      <div class="card controls">
+        <div>
+          <label for="minWeight">表示する最小リンク重み: <span id="minWeightValue">2</span></label>
+          <input id="minWeight" type="range" min="1" max="30" step="1" value="2" />
+        </div>
+
+        <div>
+          <label for="highlightRatio">重要リンクとして強調する上位割合: <span id="highlightRatioValue">15</span>%</label>
+          <input id="highlightRatio" type="range" min="1" max="50" step="1" value="15" />
+        </div>
+
+        <div>
+          <label for="repelStrength">ノード反発の強さ: <span id="repelStrengthValue">1800</span></label>
+          <input id="repelStrength" type="range" min="400" max="4200" step="100" value="1800" />
+        </div>
+
+        <div>
+          <label for="depthStrength">3D 奥行き: <span id="depthStrengthValue">140</span></label>
+          <input id="depthStrength" type="range" min="0" max="260" step="10" value="140" />
+        </div>
+
+        <div class="grid-2">
+          <label class="checkbox"><input id="onlyImportant" type="checkbox" />重要リンクのみ表示</label>
+          <label class="checkbox"><input id="showLabels" type="checkbox" checked />ラベル表示</label>
+          <label class="checkbox"><input id="enable3D" type="checkbox" checked />3D 表示</label>
+          <label class="checkbox"><input id="autoRotate" type="checkbox" />自動回転</label>
+        </div>
+
+        <div class="row">
+          <button id="relayoutBtn" class="ghost">再レイアウト</button>
+          <button id="exportBtn" class="warn">SVG 書き出し</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="kpis">
+          <div class="kpi">
+            <div class="muted small">対象文字数</div>
+            <div class="value" id="tokenCount">0</div>
+          </div>
+          <div class="kpi">
+            <div class="muted small">ノード数</div>
+            <div class="value" id="nodeCount">0</div>
+          </div>
+          <div class="kpi">
+            <div class="muted small">表示リンク数</div>
+            <div class="value" id="edgeCount">0</div>
+          </div>
+          <div class="kpi">
+            <div class="muted small">強調リンク数</div>
+            <div class="value" id="importantEdgeCount">0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between;">
+          <div class="pill" id="modePill">モード未判定</div>
+          <div class="pill" id="coveragePill">変換率 0%</div>
+        </div>
+        <div id="preview" class="preview"></div>
+      </div>
+
+      <div class="card">
+        <div class="legend">
+          <div><span class="swatch" style="background:#7383a6"></span>通常リンク</div>
+          <div><span class="swatch" style="background:#ff9d77"></span>重要リンク</div>
+          <div><span class="swatch" style="background:#72b0ff"></span>出現頻度が高いノード</div>
+          <div><span class="swatch" style="background:#ffd36e"></span>固定ノード</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content: space-between; align-items: baseline;">
+          <strong>上位リンク</strong>
+          <span class="muted small">重み順</span>
+        </div>
+        <div>
+          <table>
+            <thead>
+              <tr><th>文字</th><th>重み</th><th>状態</th></tr>
+            </thead>
+            <tbody id="topEdgesBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="footer-note">
+        ローマ字モードでは、m 同化、tch、マクロン、拡張外来音、小書き仮名などを広く扱います。文字単位モードでは、非空白・非句読点の文字をそのまま解析します。自動判定では、日本語を含めば文字単位、それ以外はローマ字変換を選びます。句読点や空白では連接を切ります。
+      </div>
+    </aside>
+
+    <main class="viewer">
+      <div class="toolbar">
+        <div id="graphInfo">データ待機中</div>
+        <div>ドラッグでノード移動 / 背景ドラッグで移動 / Shift+背景ドラッグで回転 / ホイールで拡大縮小 / ダブルクリックで固定解除</div>
+      </div>
+      <canvas id="graphCanvas" aria-label="文字ネットワーク"></canvas>
+      <div id="tooltip" class="tooltip"></div>
+    </main>
+  </div>
+
+  <script>
+    const VIEW_W = 1200;
+    const VIEW_H = 900;
+    const PREVIEW_LIMIT = 8000;
+
+    const state = {
+      nodes: [],
+      edges: [],
+      visibleEdges: [],
+      importantCutoff: Infinity,
+      tokenCount: 0,
+      previewText: '',
+      parseStats: { converted: 0, romanChars: 0 },
+      mode: 'unknown',
+      requestedMode: 'auto',
+      transform: { x: 0, y: 0, scale: 1 },
+      camera: { yaw: -0.28, pitch: 0.18, distance: 920 },
+      hoveredNode: null,
+      hoveredEdge: null,
+      dragNode: null,
+      dragLast: null,
+      panMode: false,
+      panStart: null,
+      orbitMode: false,
+      orbitStart: null,
+      animationId: null,
+      visualMotionId: null,
+      lastVisualTime: 0,
+      simulation: null,
+      worker: null,
+      isAnalyzing: false,
+      renderCache: null,
+      minFreq: 1,
+      maxFreq: 1,
+      minDegree: 1,
+      maxDegree: 1
+    };
+
+    const els = {
+      inputText: document.getElementById('inputText'),
+      analyzeBtn: document.getElementById('analyzeBtn'),
+      sampleRomajiBtn: document.getElementById('sampleRomajiBtn'),
+      sampleJapaneseBtn: document.getElementById('sampleJapaneseBtn'),
+      fileInput: document.getElementById('fileInput'),
+      analyzeMode: document.getElementById('analyzeMode'),
+      minWeight: document.getElementById('minWeight'),
+      minWeightValue: document.getElementById('minWeightValue'),
+      highlightRatio: document.getElementById('highlightRatio'),
+      highlightRatioValue: document.getElementById('highlightRatioValue'),
+      repelStrength: document.getElementById('repelStrength'),
+      repelStrengthValue: document.getElementById('repelStrengthValue'),
+      depthStrength: document.getElementById('depthStrength'),
+      depthStrengthValue: document.getElementById('depthStrengthValue'),
+      onlyImportant: document.getElementById('onlyImportant'),
+      showLabels: document.getElementById('showLabels'),
+      enable3D: document.getElementById('enable3D'),
+      autoRotate: document.getElementById('autoRotate'),
+      relayoutBtn: document.getElementById('relayoutBtn'),
+      exportBtn: document.getElementById('exportBtn'),
+      status: document.getElementById('status'),
+      tokenCount: document.getElementById('tokenCount'),
+      nodeCount: document.getElementById('nodeCount'),
+      edgeCount: document.getElementById('edgeCount'),
+      importantEdgeCount: document.getElementById('importantEdgeCount'),
+      modePill: document.getElementById('modePill'),
+      coveragePill: document.getElementById('coveragePill'),
+      preview: document.getElementById('preview'),
+      topEdgesBody: document.getElementById('topEdgesBody'),
+      graphInfo: document.getElementById('graphInfo'),
+      canvas: document.getElementById('graphCanvas'),
+      tooltip: document.getElementById('tooltip')
+    };
+
+    const ctx = els.canvas.getContext('2d');
+
+    function setStatus(msg) {
+      els.status.textContent = msg;
+    }
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function scaleBy(value, minVal, maxVal, outMin, outMax) {
+      if (maxVal <= minVal) return (outMin + outMax) / 2;
+      const t = (value - minVal) / (maxVal - minVal);
+      return outMin + (outMax - outMin) * t;
+    }
+
+    function hashToUnit(str) {
+      let h = 2166136261 >>> 0;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return (h >>> 0) / 4294967295;
+    }
+
+    function percentileCutoff(values, topRatioPercent) {
+      if (!values.length) return Infinity;
+      const sorted = [...values].sort((a, b) => b - a);
+      const count = Math.max(1, Math.ceil(sorted.length * (topRatioPercent / 100)));
+      return sorted[Math.min(count - 1, sorted.length - 1)];
+    }
+
+    function motionEnabled() {
+      return !!(els.enable3D.checked && els.autoRotate.checked);
+    }
+
+    function startVisualMotion() {
+      if (state.visualMotionId) return;
+      state.lastVisualTime = 0;
+      const loop = (ts) => {
+        state.visualMotionId = null;
+        if (els.enable3D.checked && els.autoRotate.checked && !state.orbitMode) {
+          const dtMs = state.lastVisualTime ? Math.min(40, Math.max(8, ts - state.lastVisualTime)) : 16.6667;
+          state.lastVisualTime = ts;
+          const yawPerSecond = 0.14;
+          state.camera.yaw += yawPerSecond * (dtMs / 1000);
+          state.renderCache = null;
+          drawGraph();
+        } else {
+          state.lastVisualTime = ts;
+        }
+        if (motionEnabled()) state.visualMotionId = requestAnimationFrame(loop);
+      };
+      state.visualMotionId = requestAnimationFrame(loop);
+    }
+
+    function stopVisualMotion() {
+      if (state.visualMotionId) {
+        cancelAnimationFrame(state.visualMotionId);
+        state.visualMotionId = null;
+      }
+      state.lastVisualTime = 0;
+    }
+
+    function syncVisualMotion() {
+      if (motionEnabled()) startVisualMotion();
+      else stopVisualMotion();
+    }
+
+    function resizeCanvas() {
+      const rect = els.canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.round(rect.width * dpr));
+      const height = Math.max(1, Math.round(rect.height * dpr));
+      if (els.canvas.width !== width || els.canvas.height !== height) {
+        els.canvas.width = width;
+        els.canvas.height = height;
+      }
+    }
+
+    function clientToWorld(clientX, clientY) {
+      const rect = els.canvas.getBoundingClientRect();
+      const sx = ((clientX - rect.left) / rect.width) * VIEW_W;
+      const sy = ((clientY - rect.top) / rect.height) * VIEW_H;
+      return {
+        x: (sx - state.transform.x) / state.transform.scale,
+        y: (sy - state.transform.y) / state.transform.scale
+      };
+    }
+
+    function getNodeRadius(node) {
+      return scaleBy(node.freq, state.minFreq, state.maxFreq, 10, 28);
+    }
+
+    function refreshStats(visibleEdges, importantEdges) {
+      els.tokenCount.textContent = state.tokenCount.toLocaleString('ja-JP');
+      els.nodeCount.textContent = state.nodes.length.toLocaleString('ja-JP');
+      els.edgeCount.textContent = visibleEdges.length.toLocaleString('ja-JP');
+      els.importantEdgeCount.textContent = importantEdges.length.toLocaleString('ja-JP');
+    }
+
+    function refreshTopEdges(visibleEdges) {
+      const rows = visibleEdges.slice(0, 12);
+      if (!rows.length) {
+        els.topEdgesBody.innerHTML = '<tr><td colspan="3" class="muted">該当リンクがありません</td></tr>';
+        return;
+      }
+      els.topEdgesBody.innerHTML = rows.map(edge => {
+        const important = edge.weight >= state.importantCutoff;
+        return `<tr><td>${escapeHtml(edge.source)} ⇄ ${escapeHtml(edge.target)}</td><td>${edge.weight}</td><td>${important ? '強調' : '通常'}</td></tr>`;
+      }).join('');
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[<>&"']/g, s => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' }[s]));
+    }
+
+    function buildGraphFromResult(result) {
+      const nodes = result.nodes.map((entry, idx) => {
+        const seed = hashToUnit(entry.id + ':' + idx);
+        return {
+          id: entry.id,
+          freq: entry.freq,
+          degreeWeight: 0,
+          x: 100 + ((idx * 97) % 1000),
+          y: 100 + ((idx * 157) % 700),
+          z: 0,
+          baseZ: 0,
+          phase: seed * Math.PI * 2,
+          motionBias: 0.7 + seed * 0.9,
+          vx: 0,
+          vy: 0,
+          ax: 0,
+          ay: 0,
+          fixed: false,
+          fx: null,
+          fy: null
+        };
+      });
+
+      const nodeById = new Map(nodes.map(node => [node.id, node]));
+      const edges = result.edges.map(entry => {
+        const sourceNode = nodeById.get(entry.source);
+        const targetNode = nodeById.get(entry.target);
+        if (sourceNode) sourceNode.degreeWeight += entry.weight;
+        if (targetNode) targetNode.degreeWeight += entry.weight;
+        return {
+          source: entry.source,
+          target: entry.target,
+          weight: entry.weight,
+          directionalAB: entry.directionalAB,
+          directionalBA: entry.directionalBA,
+          sourceNode,
+          targetNode,
+          layoutWeightNorm: 0
+        };
+      }).sort((a, b) => b.weight - a.weight);
+
+      state.nodes = nodes;
+      state.edges = edges;
+      state.tokenCount = result.tokenCount;
+      state.previewText = result.previewText;
+      state.parseStats = { converted: result.converted, romanChars: result.romanChars };
+      state.mode = result.mode;
+      state.requestedMode = result.requestedMode || 'auto';
+      state.minFreq = nodes.length ? Math.min(...nodes.map(n => n.freq)) : 1;
+      state.maxFreq = nodes.length ? Math.max(...nodes.map(n => n.freq)) : 1;
+      state.minDegree = nodes.length ? Math.min(...nodes.map(n => n.degreeWeight)) : 1;
+      state.maxDegree = nodes.length ? Math.max(...nodes.map(n => n.degreeWeight)) : 1;
+      assignNodeDepths();
+      state.renderCache = null;
+
+      if (result.mode === 'romaji') {
+        els.modePill.textContent = result.requestedMode === 'auto' ? '自動→ローマ字→ひらがな' : 'ローマ字→ひらがなモード';
+        const coverage = result.romanChars ? Math.round((result.converted / result.romanChars) * 100) : 0;
+        els.coveragePill.textContent = `変換率 ${coverage}%`;
+      } else {
+        els.modePill.textContent = result.requestedMode === 'auto' ? '自動→文字単位' : '文字単位モード';
+        els.coveragePill.textContent = '変換なし';
+      }
+
+      els.preview.textContent = result.previewText || '(結果なし)';
+      if (result.previewTruncated) els.preview.textContent += '\n\n…（プレビューは先頭のみ表示）';
+    }
+
+    function assignNodeDepths() {
+      const depth = Number(els.depthStrength.value || 0);
+      for (const node of state.nodes) {
+        const seed = hashToUnit(node.id);
+        const degreeNorm = scaleBy(node.degreeWeight || 0, state.minDegree, state.maxDegree, -1, 1);
+        const wave = Math.sin(seed * 13.17) * 0.45 + Math.cos(seed * 23.41) * 0.55;
+        node.baseZ = depth * (degreeNorm * 0.68 + wave * 0.42);
+      }
+      state.renderCache = null;
+    }
+
+    function applyFilterAndRender({ resetLayout = false } = {}) {
+      const minWeight = Number(els.minWeight.value);
+      const highlightRatio = Number(els.highlightRatio.value);
+      const onlyImportant = els.onlyImportant.checked;
+
+      let visibleEdges = state.edges.filter(edge => edge.weight >= minWeight);
+      const cutoff = percentileCutoff(visibleEdges.map(e => e.weight), highlightRatio);
+      state.importantCutoff = cutoff;
+      const importantEdges = visibleEdges.filter(e => e.weight >= cutoff);
+      if (onlyImportant) visibleEdges = importantEdges;
+
+      const logWeights = visibleEdges.map(edge => Math.log1p(edge.weight));
+      const minLogWeight = logWeights.length ? Math.min(...logWeights) : 0;
+      const maxLogWeight = logWeights.length ? Math.max(...logWeights) : 1;
+      for (const edge of visibleEdges) {
+        edge.layoutWeightNorm = scaleBy(Math.log1p(edge.weight), minLogWeight, maxLogWeight, 0, 1);
+      }
+      state.visibleEdges = visibleEdges;
+
+      refreshStats(visibleEdges, importantEdges.filter(edge => visibleEdges.includes(edge)));
+      refreshTopEdges(visibleEdges);
+      els.graphInfo.textContent = `表示: ${state.nodes.length} ノード / ${visibleEdges.length} リンク / 強調閾値 ${Number.isFinite(cutoff) ? cutoff : 0}`;
+
+      if (resetLayout) resetNodePositions();
+      assignNodeDepths();
+      prepareSimulation();
+      requestDraw();
+      syncVisualMotion();
+    }
+
+    function resetNodePositions() {
+      const ordered = [...state.nodes].sort((a, b) => (b.degreeWeight || 0) - (a.degreeWeight || 0));
+      const cx = VIEW_W / 2;
+      const cy = VIEW_H / 2;
+      const baseRadius = Math.min(VIEW_W, VIEW_H) * 0.28;
+
+      for (let i = 0; i < ordered.length; i++) {
+        const node = ordered[i];
+        const angle = (Math.PI * 2 * i) / Math.max(1, ordered.length);
+        const radialBias = scaleBy(node.degreeWeight || 0, state.minDegree, state.maxDegree, -80, 70);
+        const radius = baseRadius + radialBias;
+        node.x = clamp(cx + Math.cos(angle) * radius, 60, VIEW_W - 60);
+        node.y = clamp(cy + Math.sin(angle) * radius, 60, VIEW_H - 60);
+        node.vx = 0;
+        node.vy = 0;
+        if (!node.fixed) {
+          node.fx = null;
+          node.fy = null;
+        }
+      }
+      state.transform = { x: 0, y: 0, scale: 1 };
+      state.camera.yaw = -0.28;
+      state.camera.pitch = 0.18;
+      state.renderCache = null;
+    }
+
+    function stopSimulation() {
+      if (state.animationId) {
+        cancelAnimationFrame(state.animationId);
+        state.animationId = null;
+      }
+      state.simulation = null;
+      syncVisualMotion();
+    }
+
+    function prepareSimulation() {
+      stopSimulation();
+      if (!state.nodes.length || !state.visibleEdges.length) {
+        syncVisualMotion();
+        return;
+      }
+      state.simulation = { alpha: 0.9, ticks: 0, settledFrames: 0 };
+      state.animationId = requestAnimationFrame(tickSimulation);
+    }
+
+    function tickSimulation() {
+      const sim = state.simulation;
+      if (!sim) return;
+
+      const nodes = state.nodes;
+      const edges = state.visibleEdges;
+      const repel = Number(els.repelStrength.value);
+      const centerX = VIEW_W / 2;
+      const centerY = VIEW_H / 2;
+      let totalSpeed = 0;
+      const substeps = 4;
+
+      for (let step = 0; step < substeps; step++) {
+        const alpha = sim.alpha;
+        for (const n of nodes) {
+          n.ax = 0;
+          n.ay = 0;
+        }
+
+        for (let i = 0; i < nodes.length; i++) {
+          const a = nodes[i];
+          for (let j = i + 1; j < nodes.length; j++) {
+            const b = nodes[j];
+            let dx = a.x - b.x;
+            let dy = a.y - b.y;
+            let dist2 = dx * dx + dy * dy;
+            if (dist2 < 900) {
+              dist2 = 900;
+              if (dx === 0 && dy === 0) {
+                dx = 0.0001 * (i + 1);
+                dy = 0.0001 * (j + 1);
+              }
+            }
+            const dist = Math.sqrt(dist2);
+            const force = (repel * alpha * 0.32) / dist2;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            a.ax += fx;
+            a.ay += fy;
+            b.ax -= fx;
+            b.ay -= fy;
+          }
+        }
+
+        for (const edge of edges) {
+          const a = edge.sourceNode;
+          const b = edge.targetNode;
+          if (!a || !b) continue;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 0.001;
+          const w = Number.isFinite(edge.layoutWeightNorm) ? edge.layoutWeightNorm : 0;
+          const desired = 90 + (1 - w) * 120;
+          const spring = (0.003 + w * 0.016) * alpha;
+          const delta = dist - desired;
+          const fx = (dx / dist) * delta * spring;
+          const fy = (dy / dist) * delta * spring;
+          a.ax += fx;
+          a.ay += fy;
+          b.ax -= fx;
+          b.ay -= fy;
+        }
+
+        totalSpeed = 0;
+        for (const n of nodes) {
+          const centerPull = alpha > 0.12 ? 0.00045 * alpha : 0;
+          n.ax += (centerX - n.x) * centerPull;
+          n.ay += (centerY - n.y) * centerPull;
+
+          if (n.fixed) {
+            n.x = n.fx;
+            n.y = n.fy;
+            n.vx = 0;
+            n.vy = 0;
+            continue;
+          }
+
+          n.vx = (n.vx + n.ax) * 0.78;
+          n.vy = (n.vy + n.ay) * 0.78;
+          const speed = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
+          const maxSpeed = 4.5 + alpha * 2.5;
+          if (speed > maxSpeed) {
+            const s = maxSpeed / speed;
+            n.vx *= s;
+            n.vy *= s;
+          }
+          n.x = clamp(n.x + n.vx, 40, VIEW_W - 40);
+          n.y = clamp(n.y + n.vy, 40, VIEW_H - 40);
+          totalSpeed += Math.abs(n.vx) + Math.abs(n.vy);
+        }
+
+        sim.alpha *= 0.955;
+        sim.ticks += 1;
+      }
+
+      state.renderCache = null;
+      requestDraw();
+
+      const avgSpeed = totalSpeed / Math.max(1, nodes.length);
+      if (avgSpeed < 0.06) sim.settledFrames += 1;
+      else sim.settledFrames = 0;
+
+      if (sim.ticks > 220 || sim.settledFrames >= 4 || sim.alpha < 0.015) {
+        for (const n of nodes) {
+          if (!n.fixed) {
+            n.vx = 0;
+            n.vy = 0;
+          }
+        }
+        stopSimulation();
+        requestDraw();
+        return;
+      }
+
+      state.animationId = requestAnimationFrame(tickSimulation);
+    }
+
+    let drawQueued = false;
+    function requestDraw() {
+      state.renderCache = null;
+      if (drawQueued) return;
+      drawQueued = true;
+      requestAnimationFrame(() => {
+        drawQueued = false;
+        drawGraph();
+      });
+    }
+
+    function computeRenderCache() {
+      if (state.renderCache) return state.renderCache;
+      const enable3D = !!els.enable3D.checked;
+      const yaw = enable3D ? state.camera.yaw : 0;
+      const pitch = enable3D ? state.camera.pitch : 0;
+      const cam = state.camera.distance;
+      const cx = VIEW_W / 2;
+      const cy = VIEW_H / 2;
+      const nodes = [];
+
+      for (const node of state.nodes) {
+        let x = node.x;
+        let y = node.y;
+        let z = enable3D ? (node.baseZ || 0) : 0;
+
+        if (!enable3D || Number(els.depthStrength.value) <= 0) {
+          nodes.push({ node, x, y, z: 0, persp: 1, radius: getNodeRadius(node) });
+          continue;
+        }
+
+        const dx = x - cx;
+        const dy = y - cy;
+        const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
+        const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
+        const x1 = dx * cosY - z * sinY;
+        const z1 = dx * sinY + z * cosY;
+        const y2 = dy * cosP - z1 * sinP;
+        const z2 = dy * sinP + z1 * cosP;
+        const denom = Math.max(220, cam - z2);
+        const persp = cam / denom;
+        const radius = getNodeRadius(node) * clamp(0.80 + (persp - 1) * 0.55, 0.72, 1.45);
+        nodes.push({
+          node,
+          x: cx + x1 * persp,
+          y: cy + y2 * persp,
+          z: z2,
+          persp,
+          radius
+        });
+      }
+
+      const nodeById = new Map(nodes.map(item => [item.node.id, item]));
+      const edges = [];
+      for (const edge of state.visibleEdges) {
+        const a = nodeById.get(edge.source);
+        const b = nodeById.get(edge.target);
+        if (!a || !b) continue;
+        edges.push({
+          edge,
+          ax: a.x, ay: a.y,
+          bx: b.x, by: b.y,
+          z: (a.z + b.z) * 0.5,
+          depthAlpha: clamp((a.persp + b.persp) * 0.5, 0.72, 1.3)
+        });
+      }
+
+      nodes.sort((a, b) => a.z - b.z);
+      edges.sort((a, b) => a.z - b.z);
+      state.renderCache = { nodes, nodeById, edges };
+      return state.renderCache;
+    }
+
+    function drawGraph() {
+      resizeCanvas();
+      const width = els.canvas.width;
+      const height = els.canvas.height;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.scale(width / VIEW_W, height / VIEW_H);
+
+      const cache = computeRenderCache();
+      const visibleEdges = state.visibleEdges;
+      const importantCutoff = state.importantCutoff;
+      const minWeight = visibleEdges.length ? Math.min(...visibleEdges.map(e => e.weight)) : 1;
+      const maxWeight = visibleEdges.length ? Math.max(...visibleEdges.map(e => e.weight)) : 1;
+      const showLabels = els.showLabels.checked;
+
+      ctx.save();
+      ctx.translate(state.transform.x, state.transform.y);
+      ctx.scale(state.transform.scale, state.transform.scale);
+
+      for (const item of cache.edges) {
+        const edge = item.edge;
+        const important = edge.weight >= importantCutoff;
+        const depthAlpha = item.depthAlpha;
+        ctx.beginPath();
+        ctx.moveTo(item.ax, item.ay);
+        ctx.lineTo(item.bx, item.by);
+        ctx.lineWidth = scaleBy(edge.weight, minWeight, maxWeight, 1.2, 6.2) * clamp(depthAlpha, 0.84, 1.18);
+        ctx.strokeStyle = important
+          ? `rgba(255,157,119,${0.54 + depthAlpha * 0.22})`
+          : `rgba(115,131,166,${0.18 + depthAlpha * 0.12})`;
+        if (edge === state.hoveredEdge) {
+          ctx.strokeStyle = important ? 'rgba(255,190,152,0.98)' : 'rgba(176,194,233,0.72)';
+          ctx.lineWidth += 1.4;
+        }
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+
+      ctx.textBaseline = 'middle';
+      for (const item of cache.nodes) {
+        const node = item.node;
+        const r = item.radius;
+        const hot = node.degreeWeight > (state.minDegree + state.maxDegree) / 2;
+        if (hot) {
+          ctx.beginPath();
+          ctx.fillStyle = 'rgba(114,176,255,0.12)';
+          ctx.arc(item.x, item.y, r + 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = node === state.hoveredNode ? '#9bd0ff' : '#72b0ff';
+        ctx.fill();
+        ctx.strokeStyle = node.fixed ? '#ffd36e' : '#d9ecff';
+        ctx.lineWidth = node.fixed ? 2.2 : 1.15;
+        ctx.stroke();
+
+        if (showLabels) {
+          ctx.font = '700 18px Inter, "Noto Sans JP", system-ui, sans-serif';
+          ctx.fillStyle = '#eaf2ff';
+          ctx.fillText(node.id, item.x + r + 6, item.y + 1);
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function findNodeAt(worldX, worldY) {
+      const cache = computeRenderCache();
+      for (let i = cache.nodes.length - 1; i >= 0; i--) {
+        const item = cache.nodes[i];
+        const r = item.radius + 5;
+        const dx = worldX - item.x;
+        const dy = worldY - item.y;
+        if (dx * dx + dy * dy <= r * r) return item.node;
+      }
+      return null;
+    }
+
+    function distanceToSegment(px, py, x1, y1, x2, y2) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
+      const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
+      const sx = x1 + t * dx;
+      const sy = y1 + t * dy;
+      return Math.hypot(px - sx, py - sy);
+    }
+
+    function findEdgeAt(worldX, worldY) {
+      const cache = computeRenderCache();
+      let best = null;
+      let bestDist = Infinity;
+      for (let i = cache.edges.length - 1; i >= 0; i--) {
+        const item = cache.edges[i];
+        const d = distanceToSegment(worldX, worldY, item.ax, item.ay, item.bx, item.by);
+        if (d < 8 / state.transform.scale && d < bestDist) {
+          best = item.edge;
+          bestDist = d;
+        }
+      }
+      return best;
+    }
+
+    function showTooltip(html, clientX, clientY) {
+      els.tooltip.innerHTML = html;
+      els.tooltip.style.opacity = '1';
+      els.tooltip.style.transform = `translate(${clientX + 14}px, ${clientY + 14}px)`;
+    }
+
+    function hideTooltip() {
+      els.tooltip.style.opacity = '0';
+      els.tooltip.style.transform = 'translate(-9999px, -9999px)';
+    }
+
+    function generateSvgString() {
+      const cache = computeRenderCache();
+      const visibleEdges = state.visibleEdges;
+      const importantCutoff = state.importantCutoff;
+      const minWeight = visibleEdges.length ? Math.min(...visibleEdges.map(e => e.weight)) : 1;
+      const maxWeight = visibleEdges.length ? Math.max(...visibleEdges.map(e => e.weight)) : 1;
+      const showLabels = els.showLabels.checked;
+      const parts = [];
+      parts.push(`<?xml version="1.0" encoding="UTF-8"?>`);
+      parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${VIEW_W}" height="${VIEW_H}" viewBox="0 0 ${VIEW_W} ${VIEW_H}">`);
+      parts.push(`<rect width="100%" height="100%" fill="#0b1020" />`);
+      parts.push(`<g transform="translate(${state.transform.x} ${state.transform.y}) scale(${state.transform.scale})">`);
+      for (const item of cache.edges) {
+        const edge = item.edge;
+        const important = edge.weight >= importantCutoff;
+        const width = scaleBy(edge.weight, minWeight, maxWeight, 1.2, 6.2).toFixed(2);
+        const color = important ? '#ff9d77' : '#7383a6';
+        const opacity = important ? 0.86 : 0.28;
+        parts.push(`<line x1="${item.ax.toFixed(2)}" y1="${item.ay.toFixed(2)}" x2="${item.bx.toFixed(2)}" y2="${item.by.toFixed(2)}" stroke="${color}" stroke-opacity="${opacity}" stroke-width="${width}" stroke-linecap="round" />`);
+      }
+      for (const item of cache.nodes) {
+        const node = item.node;
+        const r = item.radius.toFixed(2);
+        const fill = node === state.hoveredNode ? '#9bd0ff' : '#72b0ff';
+        const stroke = node.fixed ? '#ffd36e' : '#d9ecff';
+        const strokeWidth = node.fixed ? 2.2 : 1.2;
+        parts.push(`<circle cx="${item.x.toFixed(2)}" cy="${item.y.toFixed(2)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" />`);
+        if (showLabels) {
+          parts.push(`<text x="${(item.x + Number(r) + 6).toFixed(2)}" y="${(item.y + 4).toFixed(2)}" font-size="18" font-weight="700" fill="#eaf2ff">${escapeHtml(node.id)}</text>`);
+        }
+      }
+      parts.push(`</g></svg>`);
+      return parts.join('');
+    }
+
+    function makeWorker() {
+      const workerCode = `
+        const PREVIEW_LIMIT = ${PREVIEW_LIMIT};
+
+        const syllableMap = {
+          kya:'きゃ', kyu:'きゅ', kyo:'きょ', gya:'ぎゃ', gyu:'ぎゅ', gyo:'ぎょ',
+          sha:'しゃ', shu:'しゅ', sho:'しょ', sya:'しゃ', syu:'しゅ', syo:'しょ',
+          ja:'じゃ', ju:'じゅ', jo:'じょ', jya:'じゃ', jyu:'じゅ', jyo:'じょ', zya:'じゃ', zyu:'じゅ', zyo:'じょ',
+          cha:'ちゃ', chu:'ちゅ', cho:'ちょ', che:'ちぇ', cya:'ちゃ', cyu:'ちゅ', cyo:'ちょ',
+          tya:'ちゃ', tyu:'ちゅ', tyo:'ちょ', tye:'ちぇ',
+          nya:'にゃ', nyu:'にゅ', nyo:'にょ', nye:'にぇ',
+          hya:'ひゃ', hyu:'ひゅ', hyo:'ひょ', hye:'ひぇ',
+          bya:'びゃ', byu:'びゅ', byo:'びょ', bye:'びぇ',
+          pya:'ぴゃ', pyu:'ぴゅ', pyo:'ぴょ', pye:'ぴぇ',
+          mya:'みゃ', myu:'みゅ', myo:'みょ', mye:'みぇ',
+          rya:'りゃ', ryu:'りゅ', ryo:'りょ', rye:'りぇ',
+          dya:'ぢゃ', dyu:'ぢゅ', dyo:'ぢょ', dye:'ぢぇ',
+          gwi:'ぐぃ', gwe:'ぐぇ', gwo:'ぐぉ', gwa:'ぐぁ',
+          kwi:'くぃ', kwe:'くぇ', kwo:'くぉ', kwa:'くぁ',
+          fa:'ふぁ', fi:'ふぃ', fe:'ふぇ', fo:'ふぉ', fyu:'ふゅ', fya:'ふゃ', fyo:'ふょ', fye:'ふぇ',
+          va:'ゔぁ', vi:'ゔぃ', vu:'ゔ', ve:'ゔぇ', vo:'ゔぉ', vya:'ゔゃ', vyu:'ゔゅ', vyo:'ゔょ',
+          tsa:'つぁ', tsi:'つぃ', tse:'つぇ', tso:'つぉ',
+          she:'しぇ', je:'じぇ', che:'ちぇ',
+          thi:'てぃ', thu:'てゅ', the:'てぇ', tho:'てょ',
+          dhi:'でぃ', dhu:'でゅ', dhe:'でぇ', dho:'でょ',
+          qa:'くぁ', qi:'くぃ', qu:'く', qe:'くぇ', qo:'くぉ',
+          ye:'いぇ',
+          xtsu:'っ', ltsu:'っ', xtu:'っ', ltu:'っ',
+          xya:'ゃ', lya:'ゃ', xyu:'ゅ', lyu:'ゅ', xyo:'ょ', lyo:'ょ',
+          xwa:'ゎ', lwa:'ゎ', xka:'ヵ', xke:'ヶ',
+          a:'あ', i:'い', u:'う', e:'え', o:'お',
+          ka:'か', ki:'き', ku:'く', ke:'け', ko:'こ',
+          ga:'が', gi:'ぎ', gu:'ぐ', ge:'げ', go:'ご',
+          sa:'さ', si:'し', su:'す', se:'せ', so:'そ', shi:'し',
+          za:'ざ', zi:'じ', zu:'ず', ze:'ぜ', zo:'ぞ', ji:'じ',
+          ta:'た', ti:'ち', tu:'つ', te:'て', to:'と', chi:'ち', tsu:'つ',
+          da:'だ', di:'ぢ', du:'づ', de:'で', do:'ど',
+          na:'な', ni:'に', nu:'ぬ', ne:'ね', no:'の',
+          ha:'は', hi:'ひ', hu:'ふ', he:'へ', ho:'ほ', fu:'ふ',
+          ba:'ば', bi:'び', bu:'ぶ', be:'べ', bo:'ぼ',
+          pa:'ぱ', pi:'ぴ', pu:'ぷ', pe:'ぺ', po:'ぽ',
+          ma:'ま', mi:'み', mu:'む', me:'め', mo:'も',
+          ya:'や', yu:'ゆ', yo:'よ',
+          ra:'ら', ri:'り', ru:'る', re:'れ', ro:'ろ',
+          wa:'わ', wi:'うぃ', we:'うぇ', wo:'を',
+          n:'ん'
+        };
+
+        const punctRegex = new RegExp('[\\s\\u3000.,!?;:()\\[\\]{}<>「」『』【】〈〉《》〔〕・、。！？…—―ー\\-_/\\\\|~\\'\"“”‘’]');
+        const japaneseRegex = /[ぁ-タ㐀-䶿一-鿿豈-﫿々〆ヵヶ]/;
+        const keepCharRegex = new RegExp('[^\\s\\u3000]');
+        const kanaRegex = /[ぁ-ゖゔゝゞゟ]/;
+
+        function isAlphaCode(code) {
+          return (code >= 97 && code <= 122) || (code >= 65 && code <= 90);
+        }
+        function isVowel(ch) {
+          return ch === 'a' || ch === 'e' || ch === 'i' || ch === 'o' || ch === 'u';
+        }
+        function isConsonant(ch) {
+          const code = ch.charCodeAt(0);
+          return code >= 97 && code <= 122 && !isVowel(ch);
+        }
+        function normalizeRomaji(input) {
+          return input
+            .normalize('NFKC')
+            .replace(/[Ａ-Ｚａ-ｚ]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+            .replace(/[“”]/g, '"')
+            .replace(/[’‘]/g, "'")
+            .replace(/[āâ]/gi, 'aa')
+            .replace(/[īî]/gi, 'ii')
+            .replace(/[ūû]/gi, 'uu')
+            .replace(/[ēê]/gi, 'ei')
+            .replace(/[ōô]/gi, 'ou')
+            .toLowerCase();
+        }
+        function hasJapanese(input) {
+          return japaneseRegex.test(input);
+        }
+        function isSeparator(ch) {
+          return punctRegex.test(ch);
+        }
+        function shouldKeepRawChar(ch) {
+          if (!keepCharRegex.test(ch)) return false;
+          if (punctRegex.test(ch)) return false;
+          return true;
+        }
+        function initCollector(mode) {
+          return {
+            mode,
+            nodeFreq: new Map(),
+            edgeFreq: new Map(),
+            directional: new Map(),
+            previewParts: [],
+            previewLength: 0,
+            previewTruncated: false,
+            tokenCount: 0,
+            romanChars: 0,
+            converted: 0,
+            prevToken: null
+          };
+        }
+        function appendPreview(state, str) {
+          if (state.previewLength < PREVIEW_LIMIT) {
+            const rem = PREVIEW_LIMIT - state.previewLength;
+            if (str.length <= rem) {
+              state.previewParts.push(str);
+              state.previewLength += str.length;
+            } else {
+              state.previewParts.push(str.slice(0, rem));
+              state.previewLength = PREVIEW_LIMIT;
+              state.previewTruncated = true;
+            }
+          } else {
+            state.previewTruncated = true;
+          }
+        }
+        function pushToken(state, token) {
+          state.tokenCount += 1;
+          state.nodeFreq.set(token, (state.nodeFreq.get(token) || 0) + 1);
+          if (state.prevToken !== null) {
+            const key = state.prevToken < token ? state.prevToken + '\u0000' + token : token + '\u0000' + state.prevToken;
+            state.edgeFreq.set(key, (state.edgeFreq.get(key) || 0) + 1);
+            const dkey = state.prevToken + '\u0000' + token;
+            state.directional.set(dkey, (state.directional.get(dkey) || 0) + 1);
+          }
+          state.prevToken = token;
+        }
+        function breakSequence(state) {
+          state.prevToken = null;
+        }
+        function appendKanaOutput(state, outStr) {
+          appendPreview(state, outStr);
+          for (let i = 0; i < outStr.length; i++) {
+            const ch = outStr[i];
+            if (kanaRegex.test(ch)) pushToken(state, ch);
+            else breakSequence(state);
+          }
+        }
+        function analyzeRawText(input) {
+          const state = initCollector('raw');
+          const text = input.normalize('NFKC');
+          for (let i = 0; i < text.length; i++) {
+            if ((i & 32767) === 0) postMessage({ type: 'progress', progress: i / Math.max(1, text.length) });
+            const ch = text[i];
+            appendPreview(state, ch);
+            if (shouldKeepRawChar(ch)) pushToken(state, ch);
+            else breakSequence(state);
+          }
+          return finalize(state);
+        }
+        function analyzeRomajiText(input) {
+          const state = initCollector('romaji');
+          const text = normalizeRomaji(input).replace(/m(?=[bmp])/g, 'n');
+          let i = 0;
+          let steps = 0;
+          while (i < text.length) {
+            if ((steps++ & 32767) === 0) postMessage({ type: 'progress', progress: i / Math.max(1, text.length) });
+            const ch = text[i];
+            const code = ch.charCodeAt(0);
+            if (!isAlphaCode(code)) {
+              appendPreview(state, ch);
+              if (isSeparator(ch)) breakSequence(state);
+              else appendKanaOutput(state, ch);
+              i += 1;
+              continue;
+            }
+
+            // tch -> small tsu + ch...
+            if (ch === 't' && text.slice(i + 1, i + 3) === 'ch') {
+              state.romanChars += 1;
+              state.converted += 1;
+              appendKanaOutput(state, 'っ');
+              i += 1;
+              continue;
+            }
+
+            // double consonant -> small tsu (except n)
+            if (i + 1 < text.length) {
+              const ch2 = text[i + 1];
+              if (ch === ch2 && isConsonant(ch) && ch !== 'n') {
+                state.romanChars += 1;
+                state.converted += 1;
+                appendKanaOutput(state, 'っ');
+                i += 1;
+                continue;
+              }
+            }
+
+            // standalone n handling
+            if (ch === 'n') {
+              const n1 = text[i + 1] || '';
+              const n2 = text[i + 2] || '';
+              if (n1 === "'") {
+                state.romanChars += 1;
+                state.converted += 1;
+                appendKanaOutput(state, 'ん');
+                i += 2;
+                continue;
+              }
+              if (n1 === 'n') {
+                state.romanChars += 1;
+                state.converted += 1;
+                appendKanaOutput(state, 'ん');
+                i += 1;
+                continue;
+              }
+              const n1isAlpha = n1 ? isAlphaCode(n1.charCodeAt(0)) : false;
+              if (!n1 || !n1isAlpha || (!isVowel(n1) && n1 !== 'y')) {
+                state.romanChars += 1;
+                state.converted += 1;
+                appendKanaOutput(state, 'ん');
+                i += 1;
+                continue;
+              }
+              if (n1 === 'y' && !(n2 === 'a' || n2 === 'e' || n2 === 'i' || n2 === 'o' || n2 === 'u')) {
+                state.romanChars += 1;
+                state.converted += 1;
+                appendKanaOutput(state, 'ん');
+                i += 1;
+                continue;
+              }
+            }
+
+            let matched = false;
+            for (let len = 4; len >= 1; len--) {
+              const piece = text.slice(i, i + len);
+              const kana = syllableMap[piece];
+              if (kana) {
+                state.romanChars += len;
+                state.converted += len;
+                appendKanaOutput(state, kana);
+                i += len;
+                matched = true;
+                break;
+              }
+            }
+
+            if (!matched) {
+              state.romanChars += 1;
+              appendPreview(state, ch);
+              breakSequence(state);
+              i += 1;
+            }
+          }
+          return finalize(state);
+        }
+        function finalize(state) {
+          const nodes = Array.from(state.nodeFreq.entries()).map(([id, freq]) => ({ id, freq }));
+          const edges = Array.from(state.edgeFreq.entries()).map(([key, weight]) => {
+            const [source, target] = key.split('\u0000');
+            return {
+              source,
+              target,
+              weight,
+              directionalAB: state.directional.get(source + '\u0000' + target) || 0,
+              directionalBA: state.directional.get(target + '\u0000' + source) || 0
+            };
+          }).sort((a, b) => b.weight - a.weight);
+          return {
+            mode: state.mode,
+            nodes,
+            edges,
+            tokenCount: state.tokenCount,
+            previewText: state.previewParts.join(''),
+            previewTruncated: state.previewTruncated,
+            converted: state.converted,
+            romanChars: state.romanChars
+          };
+        }
+        self.onmessage = (e) => {
+          try {
+            const text = e.data.text || '';
+            const requestedMode = e.data.mode || 'auto';
+            let result;
+            if (requestedMode === 'romaji') {
+              result = analyzeRomajiText(text);
+            } else if (requestedMode === 'raw') {
+              result = analyzeRawText(text);
+            } else {
+              result = hasJapanese(text) ? analyzeRawText(text) : analyzeRomajiText(text);
+            }
+            result.requestedMode = requestedMode;
+            postMessage({ type: 'done', result });
+          } catch (err) {
+            postMessage({ type: 'error', message: err && err.message ? err.message : String(err) });
+          }
+        };
+      `;
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      return new Worker(URL.createObjectURL(blob));
+    }
+
+    function analyzeAndRender() {
+      const raw = els.inputText.value || '';
+      if (!raw.trim()) {
+        setStatus('入力が空です。');
+        return;
+      }
+      if (state.worker) {
+        state.worker.terminate();
+        state.worker = null;
+      }
+      stopSimulation();
+      state.isAnalyzing = true;
+      setStatus('解析中…');
+      els.graphInfo.textContent = '解析中';
+      try {
+        state.worker = makeWorker();
+      } catch (err) {
+        state.isAnalyzing = false;
+        setStatus(`Worker 初期化失敗: ${err && err.message ? err.message : String(err)}`);
+        els.graphInfo.textContent = '初期化失敗';
+        return;
+      }
+      state.worker.onerror = (err) => {
+        state.isAnalyzing = false;
+        setStatus(`Worker 実行失敗: ${err && err.message ? err.message : 'unknown error'}`);
+        els.graphInfo.textContent = '実行失敗';
+      };
+      state.worker.onmessageerror = () => {
+        state.isAnalyzing = false;
+        setStatus('Worker 通信失敗');
+        els.graphInfo.textContent = '通信失敗';
+      };
+      state.worker.onmessage = (e) => {
+        const msg = e.data;
+        if (msg.type === 'progress') {
+          setStatus(`解析中… ${Math.round((msg.progress || 0) * 100)}%`);
+          return;
+        }
+        if (msg.type === 'error') {
+          state.isAnalyzing = false;
+          setStatus(`解析失敗: ${msg.message}`);
+          return;
+        }
+        if (msg.type === 'done') {
+          state.isAnalyzing = false;
+          buildGraphFromResult(msg.result);
+          if (state.tokenCount < 2) {
+            state.visibleEdges = [];
+            refreshStats([], []);
+            refreshTopEdges([]);
+            els.graphInfo.textContent = '対象文字が不足しています';
+            setStatus('2 文字以上の対象が必要です。');
+            requestDraw();
+            return;
+          }
+          applyFilterAndRender({ resetLayout: true });
+          setStatus(`解析完了: ${state.tokenCount.toLocaleString('ja-JP')} 文字 / ${state.nodes.length} ノード / ${state.edges.length} リンク`);
+          syncVisualMotion();
+        }
+      };
+      state.worker.postMessage({ text: raw, mode: els.analyzeMode.value || 'auto' });
+    }
+
+    els.canvas.addEventListener('pointerdown', (e) => {
+      const p = clientToWorld(e.clientX, e.clientY);
+      const node = findNodeAt(p.x, p.y);
+      if (node) {
+        state.dragNode = node;
+        state.dragLast = p;
+        node.fixed = true;
+        node.fx = node.x;
+        node.fy = node.y;
+        els.canvas.classList.add('dragging');
+        els.canvas.setPointerCapture(e.pointerId);
+        requestDraw();
+        return;
+      }
+      if (e.shiftKey && els.enable3D.checked) {
+        state.orbitMode = true;
+        state.orbitStart = { x: e.clientX, y: e.clientY, yaw: state.camera.yaw, pitch: state.camera.pitch };
+        els.canvas.classList.add('dragging');
+        return;
+      }
+      state.panMode = true;
+      state.panStart = { x: e.clientX, y: e.clientY, tx: state.transform.x, ty: state.transform.y };
+      els.canvas.classList.add('dragging');
+    });
+
+    els.canvas.addEventListener('pointermove', (e) => {
+      const p = clientToWorld(e.clientX, e.clientY);
+      if (state.dragNode) {
+        const cache = computeRenderCache();
+        const item = cache.nodeById.get(state.dragNode.id);
+        const dx = p.x - (state.dragLast?.x ?? p.x);
+        const dy = p.y - (state.dragLast?.y ?? p.y);
+        const inv = item ? 1 / Math.max(0.78, item.persp) : 1;
+        state.dragNode.fx = clamp((state.dragNode.fx ?? state.dragNode.x) + dx * inv, 40, VIEW_W - 40);
+        state.dragNode.fy = clamp((state.dragNode.fy ?? state.dragNode.y) + dy * inv, 40, VIEW_H - 40);
+        state.dragNode.x = state.dragNode.fx;
+        state.dragNode.y = state.dragNode.fy;
+        state.dragLast = p;
+        requestDraw();
+        return;
+      }
+      if (state.orbitMode && state.orbitStart) {
+        state.camera.yaw = state.orbitStart.yaw - (e.clientX - state.orbitStart.x) * 0.008;
+        state.camera.pitch = clamp(state.orbitStart.pitch + (e.clientY - state.orbitStart.y) * 0.006, -0.95, 0.95);
+        requestDraw();
+        return;
+      }
+      if (state.panMode && state.panStart) {
+        const rect = els.canvas.getBoundingClientRect();
+        state.transform.x = state.panStart.tx + (((e.clientX - state.panStart.x) / rect.width) * VIEW_W);
+        state.transform.y = state.panStart.ty + (((e.clientY - state.panStart.y) / rect.height) * VIEW_H);
+        requestDraw();
+        return;
+      }
+      const node = findNodeAt(p.x, p.y);
+      const edge = node ? null : findEdgeAt(p.x, p.y);
+      if (node !== state.hoveredNode || edge !== state.hoveredEdge) {
+        state.hoveredNode = node;
+        state.hoveredEdge = edge;
+        requestDraw();
+      }
+      if (node) {
+        showTooltip(`<strong>文字: ${escapeHtml(node.id)}</strong><br>出現頻度: ${node.freq}<br>結びつき重み: ${node.degreeWeight}${node.fixed ? '<br>固定中' : ''}`, e.clientX, e.clientY);
+      } else if (edge) {
+        const important = edge.weight >= state.importantCutoff;
+        showTooltip(`<strong>${escapeHtml(edge.source)} ⇄ ${escapeHtml(edge.target)}</strong><br>重み: ${edge.weight}<br>${edge.source}→${edge.target}: ${edge.directionalAB}<br>${edge.target}→${edge.source}: ${edge.directionalBA}<br>${important ? '強調リンク' : '通常リンク'}`, e.clientX, e.clientY);
+      } else {
+        hideTooltip();
+      }
+    });
+
+    function releasePointer() {
+      state.dragNode = null;
+      state.dragLast = null;
+      state.panMode = false;
+      state.panStart = null;
+      state.orbitMode = false;
+      state.orbitStart = null;
+      els.canvas.classList.remove('dragging');
+      syncVisualMotion();
+    }
+
+    els.canvas.addEventListener('pointerup', releasePointer);
+    els.canvas.addEventListener('pointerleave', () => {
+      if (!state.dragNode && !state.panMode && !state.orbitMode) {
+        state.hoveredNode = null;
+        state.hoveredEdge = null;
+        hideTooltip();
+        requestDraw();
+      }
+      releasePointer();
+    });
+
+    els.canvas.addEventListener('dblclick', (e) => {
+      const p = clientToWorld(e.clientX, e.clientY);
+      const node = findNodeAt(p.x, p.y);
+      if (node) {
+        node.fixed = false;
+        node.fx = null;
+        node.fy = null;
+        prepareSimulation();
+        requestDraw();
+      }
+    });
+
+    els.canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = els.canvas.getBoundingClientRect();
+      const sx = ((e.clientX - rect.left) / rect.width) * VIEW_W;
+      const sy = ((e.clientY - rect.top) / rect.height) * VIEW_H;
+      const before = clientToWorld(e.clientX, e.clientY);
+      const scaleFactor = e.deltaY < 0 ? 1.1 : 0.91;
+      const newScale = clamp(state.transform.scale * scaleFactor, 0.35, 3.5);
+      state.transform.scale = newScale;
+      state.transform.x = sx - before.x * newScale;
+      state.transform.y = sy - before.y * newScale;
+      requestDraw();
+    }, { passive: false });
+
+    els.minWeight.addEventListener('input', () => {
+      els.minWeightValue.textContent = els.minWeight.value;
+      applyFilterAndRender();
+    });
+    els.highlightRatio.addEventListener('input', () => {
+      els.highlightRatioValue.textContent = els.highlightRatio.value;
+      applyFilterAndRender();
+    });
+    els.repelStrength.addEventListener('input', () => {
+      els.repelStrengthValue.textContent = els.repelStrength.value;
+      prepareSimulation();
+    });
+    els.depthStrength.addEventListener('input', () => {
+      els.depthStrengthValue.textContent = els.depthStrength.value;
+      assignNodeDepths();
+      requestDraw();
+    });
+    els.onlyImportant.addEventListener('change', () => applyFilterAndRender());
+    els.showLabels.addEventListener('change', requestDraw);
+    els.enable3D.addEventListener('change', () => { requestDraw(); syncVisualMotion(); });
+    els.autoRotate.addEventListener('change', syncVisualMotion);
+    els.analyzeBtn.addEventListener('click', analyzeAndRender);
+
+    els.sampleRomajiBtn.addEventListener('click', () => {
+      els.analyzeMode.value = 'romaji';
+      els.inputText.value = `shimbun wo yomu toki ni matcha to tempura no moji mo shikkari henkanshitai.
+kin'youbi no toukyou de kampai shite, she che thi dhi fyu xtsu lya nado mo tesuto suru.
+obsidian mitaina graph de juuyou na tsunagari dake iro wo kaetai.`;
+      analyzeAndRender();
+    });
+
+    els.sampleJapaneseBtn.addEventListener('click', () => {
+      els.analyzeMode.value = 'raw';
+      els.inputText.value = `日本語の文章をそのまま文字単位で解析します。\n漢字もひらがなもカタカナも、その一文字ごとの連接として扱います。\n視覚化資料は本当に使いやすい。`;
+      analyzeAndRender();
+    });
+
+    els.relayoutBtn.addEventListener('click', () => {
+      resetNodePositions();
+      assignNodeDepths();
+      prepareSimulation();
+      requestDraw();
+      syncVisualMotion();
+    });
+
+    els.exportBtn.addEventListener('click', () => {
+      const data = generateSvgString();
+      const blob = new Blob([data], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'character-network-complete.svg';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    els.fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        els.inputText.value = text;
+        setStatus(`読み込み完了: ${file.name}`);
+      } catch (err) {
+        setStatus(`読み込み失敗: ${err.message}`);
+      }
+    });
+
+    window.addEventListener('resize', requestDraw);
+    requestDraw();
+    analyzeAndRender();
+  </script>
+</body>
+</html>
